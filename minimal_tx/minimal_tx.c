@@ -42,7 +42,8 @@
 #define IP_HDRLEN  0x05 /* default IP header length == five 32-bits words. */
 #define IP_VHL_DEF (IP_VERSION | IP_HDRLEN)
 
-#define TX_PACKET_LENGTH 862
+//#define TX_PACKET_LENGTH 862
+#define TX_PACKET_LENGTH 8000
 
 #if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
 #define RTE_BE_TO_CPU_16(be_16_v)  (be_16_v)
@@ -54,6 +55,16 @@
         (uint16_t) ((((cpu_16_v) & 0xFF) << 8) | ((cpu_16_v) >> 8))
 #endif
 
+
+#define rte_ipv4_hdr ipv4_hdr
+#define rte_udp_hdr udp_hdr
+#define RTE_ETHER_TYPE_IPV4 ETHER_TYPE_IPv4
+#define rte_ether_hdr ether_hdr
+#define RTE_ETHER_MAX_LEN ETHER_MAX_LEN
+
+
+
+
 uint64_t DST_MAC;
 uint32_t IP_SRC_ADDR,IP_DST_ADDR;
 
@@ -61,9 +72,9 @@ static const struct rte_eth_conf port_conf_default = {
         .rxmode = { .max_rx_pkt_len = RTE_ETHER_MAX_LEN }
 };
 
-static struct rte_ipv4_hdr  pkt_ip_hdr;  /**< IP header of transmitted packets. */
+static struct ipv4_hdr  pkt_ip_hdr;  /**< IP header of transmitted packets. */
 static struct rte_udp_hdr pkt_udp_hdr; /**< UDP header of transmitted packets. */
-struct rte_ether_addr my_addr; // SRC MAC address of NIC
+struct ether_addr my_addr; // SRC MAC address of NIC
 
 struct rte_mempool *mbuf_pool;
 
@@ -165,9 +176,9 @@ static void send_packet(void)
 	struct rte_mbuf *pkt;
         union {
                 uint64_t as_int;
-                struct rte_ether_addr as_addr;
+                struct ether_addr as_addr;
         } dst_eth_addr;
-	struct rte_ether_hdr eth_hdr;
+	struct ether_hdr eth_hdr;
 	struct rte_mbuf *pkts_burst[1];
 
 	pkt = rte_mbuf_raw_alloc(mbuf_pool);
@@ -177,8 +188,8 @@ static void send_packet(void)
 	
         // set up addresses 
         dst_eth_addr.as_int=rte_cpu_to_be_64(DST_MAC);
-        rte_ether_addr_copy(&dst_eth_addr.as_addr,&eth_hdr.d_addr);
-        rte_ether_addr_copy(&my_addr, &eth_hdr.s_addr);
+        ether_addr_copy(&dst_eth_addr.as_addr,&eth_hdr.d_addr);
+        ether_addr_copy(&my_addr, &eth_hdr.s_addr);
         eth_hdr.ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
 
 	// copy header to packet in mbuf
@@ -279,7 +290,6 @@ int main(int argc, char **argv)
 	int ret,c;
 	uint16_t pkt_data_len;
 	int mac_flag=0,ip_src_flag=0,ip_dst_flag=0;
-	int counter = 0;
 
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
@@ -339,18 +349,21 @@ int main(int argc, char **argv)
 
 	printf("Sending packets ... [Press Ctrl+C to exit]\n");
 
-        pkt_data_len = (uint16_t) (TX_PACKET_LENGTH - (sizeof(struct rte_ether_hdr) +
+        pkt_data_len = (uint16_t) (TX_PACKET_LENGTH - (sizeof(struct ether_hdr) +
                                                     sizeof(struct rte_ipv4_hdr) +
                                                     sizeof(struct rte_udp_hdr)));
         setup_pkt_udp_ip_headers(&pkt_ip_hdr, &pkt_udp_hdr, pkt_data_len);
 
 	t1 = time(NULL);
-	while (true) {
-		counter++;
-		if (counter % 35 == 0) {
-			usleep(1);
-		}
+	uint64_t counter = 0;
+	for (; ; counter++) {
+	  //if (counter % 35 == 0) {
+	  //usleep(1);
+	  //		}
 		send_packet();
+		if (counter % 100000 == 0) {
+		  printf("sent %lu\n", (unsigned long)counter);
+		}
 	}
 
 	return(0);

@@ -15,6 +15,10 @@
 #include <rte_lcore.h>
 #include <rte_mbuf.h>
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #define RX_RING_SIZE 1024
 #define TX_RING_SIZE 0 
 
@@ -30,7 +34,7 @@ uint64_t packet_count = 0;
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = {
-		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+		.max_rx_pkt_len = ETHER_MAX_LEN,
 	},
 };
 
@@ -103,7 +107,7 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 		return retval;
 
 	/* Display the port MAC address. */
-	struct rte_ether_addr addr;
+	struct ether_addr addr;
 	rte_eth_macaddr_get(port, &addr);
 	printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
 			   " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
@@ -128,8 +132,9 @@ void rx_packets(void)
 			rte_lcore_id());
 
 	/* Run until the application is quit or killed. */
+	uint64_t last = 0;
 	for (;;) {
-		RTE_ETH_FOREACH_DEV(port) {
+	  RTE_ETH_FOREACH_DEV(port) {
 
 			struct rte_mbuf *bufs[BURST_SIZE];
 			const uint16_t nb_rx = rte_eth_rx_burst(port, 0,
@@ -143,12 +148,43 @@ void rx_packets(void)
 			//printf("received %d packets:\n",nb_rx);
 
 			for(i=0;i<nb_rx;++i){
-
-				printf("----->processing packet %d\n",i);
+			  if (packet_count - last > 100000) {
+			    last = packet_count;
+			    printf("----->processing packet %lu[..%d]:\n",(unsigned long)packet_count, i);
 				printf("----->pkt_len=%d\n",bufs[i]->pkt_len);
-				DumpHex(rte_pktmbuf_mtod(bufs[i],char *),bufs[i]->pkt_len);
+				//DumpHex(rte_pktmbuf_mtod(bufs[i],char *),bufs[i]->pkt_len);
+				uint8_t* p = rte_pktmbuf_mtod(bufs[i], uint8_t*);
+				struct ether_hdr* ether = (struct ether_hdr*)p;
+				printf("ether type %x\n", ether->ether_type);
+				if (ntohs(ether->ether_type) ==0x0806) {
+				  printf("looks like arp!\n");
+				  char src[32];
+				  char dst[32];
+				  ether_format_addr(src, sizeof src, &ether->s_addr);
+				  ether_format_addr(dst, sizeof dst, &ether->d_addr);
+				  p += 14;
+				  uint16_t hwtype = p[0] << 0 | p[1];
+				  uint16_t prototype = ntohs((p[2] << 0) | p[3]);
+				  uint8_t hlen = p[4];
+				  uint8_t plen = p[5];
+				  uint16_t opcode = (p[6] << 8) | p[7];
+				  printf("%s -> %s op code 0x%d hwtype 0x%x ptype 0x%x hlen=%d plen=%d\n", src, dst, opcode, hwtype, prototype, hlen, plen);
+				  if (hlen != 6 || plen != 4) {
+				    continue;
+				  }
+				  ether_format_addr(src, sizeof src, (struct ether_addr*)(p + 8));
+				  ether_format_addr(dst, sizeof dst, (struct ether_addr*)(p + 8 + hlen+plen));
+				  printf("src %s dst %s\n", src, dst);
 
-				rte_pktmbuf_free(bufs[i]);
+				  struct in_addr sa, da;
+				  da.s_addr = *(uint32_t*)(p+8+hlen);
+				  da.s_addr = *(uint32_t*)(p+8+hlen+plen+hlen);
+				  printf("src=%s\n", inet_ntoa(sa));
+				  printf("dst=%s\n", inet_ntoa(da));
+				}
+			  }
+
+			  rte_pktmbuf_free(bufs[i]);
 			}
 
 		}
