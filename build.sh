@@ -2,7 +2,8 @@
 
 d=$(pwd)
 
-sudo yum groupinstall "Development tools"
+sudo yum -y groupinstall "Development tools"
+sudo yum -y install numactl-devel emacs-nox
 
 curl -o tf.zip https://releases.hashicorp.com/terraform/0.13.0/terraform_0.13.0_linux_amd64.zip
 unzip tf.zip
@@ -24,7 +25,7 @@ make defconfig && make
 cd $d
 export RTE_SDK=$d
 export RTE_TARGET=$d/build
-for d in minimal_{rx,tx); do
+for d in minimal_{rx,tx,fwd); do
 	make
 done
 
